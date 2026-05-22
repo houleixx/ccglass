@@ -1,0 +1,5 @@
+node_modules/
+.ccglass/
+*.log
+.DS_Store
+.gstack/

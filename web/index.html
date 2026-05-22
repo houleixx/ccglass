@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ccglass — Claude Code wire inspector</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <span class="logo">● ccglass</span>
+      <select id="session"></select>
+      <span id="live" class="badge">live</span>
+      <span class="spacer"></span>
+      <button id="diffBtn" title="Pick two requests to compare">Diff: off</button>
+    </header>
+    <main>
+      <aside id="list"></aside>
+      <section id="detail"><div class="empty">Select a request, or start chatting in Claude Code.</div></section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

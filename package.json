@@ -1,0 +1,40 @@
+{
+  "name": "ccglass",
+  "version": "0.2.0",
+  "description": "See exactly what your coding agent sends to the model — a local logging reverse-proxy + web dashboard for Claude Code, Codex, and Kimi. Just run `ccglass`.",
+  "type": "module",
+  "bin": {
+    "ccglass": "bin/ccglass.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "prepublishOnly": "node --test",
+    "release": "npm version patch && git push --follow-tags",
+    "release:minor": "npm version minor && git push --follow-tags",
+    "release:major": "npm version major && git push --follow-tags"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "codex",
+    "openai",
+    "kimi",
+    "proxy",
+    "debug",
+    "inspector",
+    "prompt",
+    "dashboard",
+    "llm"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
