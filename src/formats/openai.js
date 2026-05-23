@@ -17,6 +17,17 @@ function flatten(content) {
   return JSON.stringify(content);
 }
 
+// Tool-call arguments arrive as a JSON string; pretty-print when parseable.
+function prettyArgs(args) {
+  if (args == null) return "";
+  if (typeof args !== "string") return JSON.stringify(args, null, 2);
+  try {
+    return JSON.stringify(JSON.parse(args), null, 2);
+  } catch {
+    return args;
+  }
+}
+
 function toolView(t) {
   const f = t.function || t;
   return { name: f.name, description: f.description || "", schema: f.parameters || f.input_schema || {} };
@@ -48,6 +59,21 @@ export const openai = {
       const input = Array.isArray(body.input) ? body.input : body.input != null ? [body.input] : [];
       const messages = input.map((item, i) => {
         if (typeof item === "string") return { label: `input[${i}]`, role: "user", type: "message", text: item, cache: false };
+        if (item.type === "function_call") {
+          return {
+            label: `input[${i}].function_call`, role: "assistant", type: "tool_use",
+            name: item.name, callId: item.call_id || item.id,
+            text: prettyArgs(item.arguments), cache: false,
+          };
+        }
+        if (item.type === "function_call_output") {
+          return {
+            label: `input[${i}].function_call_output`, role: "tool", type: "tool_result",
+            callId: item.call_id, isError: false,
+            text: typeof item.output === "string" ? item.output : JSON.stringify(item.output, null, 2),
+            cache: false,
+          };
+        }
         return {
           label: `input[${i}].${item.role || item.type || "item"}`,
           role: item.role || item.type || "",
@@ -68,13 +94,30 @@ export const openai = {
     const messages = all
       .map((m, i) => ({ m, i }))
       .filter(({ m }) => m.role !== "system" && m.role !== "developer")
-      .map(({ m, i }) => ({
-        label: `msg[${i}].${m.role}`,
-        role: m.role,
-        type: m.tool_calls ? "tool_use" : "message",
-        text: m.tool_calls ? JSON.stringify(m.tool_calls, null, 2) : flatten(m.content),
-        cache: false,
-      }));
+      .flatMap(({ m, i }) => {
+        // A tool result: pair it back to the assistant tool_call by id.
+        if (m.role === "tool") {
+          return [{
+            label: `msg[${i}].tool`, role: "tool", type: "tool_result",
+            callId: m.tool_call_id, isError: false, text: flatten(m.content), cache: false,
+          }];
+        }
+        // An assistant turn may carry several tool calls; expand one block each.
+        if (Array.isArray(m.tool_calls) && m.tool_calls.length) {
+          const out = [];
+          const said = flatten(m.content);
+          if (said) out.push({ label: `msg[${i}].${m.role}`, role: m.role, type: "message", text: said, cache: false });
+          m.tool_calls.forEach((tc, ti) => {
+            const f = tc.function || {};
+            out.push({
+              label: `msg[${i}].${m.role}.tool_call[${ti}]`, role: m.role, type: "tool_use",
+              name: f.name, callId: tc.id, text: prettyArgs(f.arguments), cache: false,
+            });
+          });
+          return out;
+        }
+        return [{ label: `msg[${i}].${m.role}`, role: m.role, type: "message", text: flatten(m.content), cache: false }];
+      });
     return { system, messages, tools };
   },
 

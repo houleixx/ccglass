@@ -27,6 +27,49 @@ test("openai.view extracts instructions/input/tools (Responses API)", () => {
   assert.equal(v.tools[0].name, "shell");
 });
 
+test("anthropic.view surfaces tool name, call id, and error on history blocks", () => {
+  const body = {
+    messages: [
+      { role: "assistant", content: [{ type: "tool_use", id: "toolu_42", name: "Bash", input: { command: "ls" } }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_42", is_error: true, content: "boom" }] },
+    ],
+  };
+  const v = anthropic.view(body);
+  const use = v.messages.find((m) => m.type === "tool_use");
+  const res = v.messages.find((m) => m.type === "tool_result");
+  assert.equal(use.name, "Bash");
+  assert.equal(use.callId, "toolu_42");
+  assert.match(use.text, /"command": "ls"/);
+  assert.equal(res.callId, "toolu_42"); // pairs back to the tool_use
+  assert.equal(res.isError, true);
+  assert.equal(res.text, "boom");
+});
+
+test("openai.view surfaces tool calls (Chat Completions + Responses)", () => {
+  const chat = openai.view({
+    messages: [
+      { role: "assistant", content: null, tool_calls: [{ id: "call_1", function: { name: "get_weather", arguments: '{"city":"SF"}' } }] },
+      { role: "tool", tool_call_id: "call_1", content: "72F" },
+    ],
+  });
+  const cUse = chat.messages.find((m) => m.type === "tool_use");
+  const cRes = chat.messages.find((m) => m.type === "tool_result");
+  assert.equal(cUse.name, "get_weather");
+  assert.equal(cUse.callId, "call_1");
+  assert.equal(cRes.callId, "call_1");
+
+  const resp = openai.view({
+    input: [
+      { type: "function_call", call_id: "fc_1", name: "shell", arguments: '{"cmd":"ls"}' },
+      { type: "function_call_output", call_id: "fc_1", output: "a\nb" },
+    ],
+  });
+  const rUse = resp.messages.find((m) => m.type === "tool_use");
+  assert.equal(rUse.name, "shell");
+  assert.equal(rUse.callId, "fc_1");
+  assert.equal(resp.messages.find((m) => m.type === "tool_result").callId, "fc_1");
+});
+
 test("openai.reassemble rebuilds Responses API stream + usage", () => {
   const sse = [
     `data: {"type":"response.created","response":{"model":"gpt-5-codex"}}`,

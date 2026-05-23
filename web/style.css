@@ -79,9 +79,19 @@ aside {
   margin: 0; padding: 12px; white-space: pre-wrap; word-break: break-word;
   font-family: var(--mono); font-size: 12.5px; max-height: 460px; overflow: auto;
 }
-.tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; }
+.tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; font-family: var(--mono); }
 .tag.cache { background: var(--cache); color: #0e1116; }
 .tag.tool { background: var(--accent); color: #0e1116; }
+.tag.result { background: var(--add); color: #0e1116; }
+.tag.err { background: var(--del); color: #0e1116; }
+.tag.id { letter-spacing: .3px; }
+.block details > summary {
+  cursor: pointer; padding: 12px; color: var(--muted);
+  font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; word-break: break-word;
+}
+.block details[open] > summary { border-bottom: 1px solid var(--border); }
+.block details > summary .more { color: var(--accent); }
+.block details > pre { border-top: none; }
 .diff-add { border-left: 3px solid var(--add); }
 .diff-del { border-left: 3px solid var(--del); opacity: .7; }
 .diff-section { margin: 18px 0 8px; font-weight: 700; }

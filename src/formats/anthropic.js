@@ -5,6 +5,21 @@ import { reassembleResponse, blockText } from "../parse.js";
 import { requestBlocks } from "../diff.js";
 import { estimateRequestTokens, costFromUsage } from "../tokens.js";
 
+// Readable body for a single content block in the message history. tool_use
+// shows its input args; tool_result shows the returned content (not the
+// "[tool_result]" placeholder, since the type is already shown as a tag).
+function messageText(b) {
+  if (b == null || typeof b === "string") return String(b ?? "");
+  if (b.type === "tool_use") return JSON.stringify(b.input ?? {}, null, 2);
+  if (b.type === "tool_result") {
+    const c = b.content;
+    if (typeof c === "string") return c;
+    if (Array.isArray(c)) return c.map(blockText).join("\n");
+    return c == null ? "" : JSON.stringify(c, null, 2);
+  }
+  return b.text ?? (b.input ? JSON.stringify(b.input, null, 2) : blockText(b));
+}
+
 export const anthropic = {
   name: "anthropic",
 
@@ -31,7 +46,10 @@ export const anthropic = {
           label: `msg[${mi}].${m.role}[${bi}]`,
           role: m.role,
           type: b.type || "text",
-          text: b.text ?? (b.input ? JSON.stringify(b.input, null, 2) : blockText(b)),
+          name: b.name,                         // tool_use: which tool was called
+          callId: b.id || b.tool_use_id,        // pairs a tool_use with its tool_result
+          isError: !!b.is_error,                // tool_result: did the call fail
+          text: messageText(b),
           cache: !!b.cache_control,
         });
       });

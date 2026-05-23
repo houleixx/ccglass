@@ -144,13 +144,38 @@ function blocksHtml(blocks) {
   return blocks.map((b) => blockEl(b.label, b.text, b.cache ? '<span class="tag cache">cache 1h</span>' : "")).join("");
 }
 
+// A short, stable hue from a tool-call id so a tool_use and its matching
+// tool_result share the same colored stripe and id chip.
+function idHue(id) {
+  let h = 0;
+  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
+}
+
+// Long bodies fold into a <details> so the history stays scannable.
+function preBody(text) {
+  const t = text || "";
+  const long = t.length > 800 || t.split("\n").length > 18;
+  if (!long) return `<pre>${esc(t)}</pre>`;
+  const head = esc(t.split("\n").slice(0, 3).join("\n")).slice(0, 240);
+  return `<details><summary>${head}… <span class="more">show all (${t.length} chars)</span></summary><pre>${esc(t)}</pre></details>`;
+}
+
 function messagesHtml(messages) {
   if (!messages.length) return `<p style="color:var(--muted)">none</p>`;
   return messages.map((m) => {
     const tags = [];
     if (m.cache) tags.push('<span class="tag cache">cache 1h</span>');
-    if (m.type && m.type !== "text" && m.type !== "message") tags.push(`<span class="tag tool">${esc(m.type)}</span>`);
-    return blockEl(m.label, m.text, tags.join(""));
+    if (m.type === "tool_use") tags.push(`<span class="tag tool">🔧 ${esc(m.name || "tool_use")}</span>`);
+    else if (m.type === "tool_result") tags.push(`<span class="tag ${m.isError ? "err" : "result"}">↳ ${m.isError ? "error" : "result"}</span>`);
+    else if (m.type && m.type !== "text" && m.type !== "message") tags.push(`<span class="tag tool">${esc(m.type)}</span>`);
+    const paired = m.type === "tool_use" || m.type === "tool_result";
+    if (paired && m.callId) {
+      const hue = idHue(m.callId);
+      tags.push(`<span class="tag id" style="background:hsl(${hue} 60% 28%);color:hsl(${hue} 70% 82%)">${esc(String(m.callId).slice(-8))}</span>`);
+    }
+    const stripe = paired && m.callId ? ` style="border-left:3px solid hsl(${idHue(m.callId)} 60% 45%)"` : "";
+    return `<div class="block"${stripe}><div class="h"><span>${esc(m.label)}</span><span>${tags.join("")}</span></div>${preBody(m.text)}</div>`;
   }).join("");
 }
 
