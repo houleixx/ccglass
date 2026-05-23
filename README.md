@@ -63,14 +63,24 @@ your DeepSeek key is set (`DEEPSEEK_API_KEY`).
 ## What you get
 
 - **Live request stream** — every call appears instantly; click to expand the
-  system prompt, messages, and tools with all escaped strings unescaped.
+  system prompt, messages, and tools with all escaped strings unescaped. Long
+  blocks fold behind a show/hide toggle; each row shows its timestamp and a
+  tool-call count.
+- **Conversation flow** — a top-to-bottom sequence diagram of the agent loop:
+  which tool the model picked from the menu, how it ran locally, and how the
+  result was fed back. `tool_use` and `tool_result` are paired by `call_id` and
+  color-coded; skill calls are flagged.
 - **Turn-to-turn diff** — pick two requests, see exactly what context was added
   this turn and which blocks carry a cache breakpoint.
 - **Token / cache / cost** — exact input/output/cache tokens from the response
   `usage`, cache-hit rate, and estimated USD per request (per-provider pricing).
 - **Response reassembly + export** — streamed SSE rebuilt into the final message
   (`stop_reason`, tool calls, usage), for both the Anthropic and OpenAI wire
-  formats; export any request to Markdown / JSON / HAR.
+  formats; export any request to a readable **raw** HTTP transcript, Markdown,
+  JSON, or HAR.
+- **Self-inspection (MCP)** — when wrapping Claude Code, ccglass registers its
+  own query tools so the agent can inspect the very requests it just made, right
+  inside the chat (`--no-mcp` to skip).
 
 ## Usage
 
@@ -83,7 +93,7 @@ ccglass deepseek-tui [args...] # inspect DeepSeek-TUI runtime directly
 ccglass kimi   [args...]      # inspect Kimi (via Claude Code)
 ccglass run --provider openai -- <cmd...>   # inspect any client
 ccglass view                  # re-open the dashboard over saved .ccglass/ logs
-ccglass export <id> --format md|json|har
+ccglass export <id> --format raw|md|json|har   # raw = readable HTTP transcript
 ```
 
 ### Options
@@ -95,7 +105,9 @@ ccglass export <id> --format md|json|har
 | `--port <n>` | auto | Dashboard port |
 | `--proxy-port <n>` | auto | Proxy port |
 | `--dir <path>` | `./.ccglass` | Where logs are stored |
-| `--open` | off | Open the dashboard in your browser |
+| `--no-open` | off | The dashboard opens in your browser by default; pass this to skip it |
+| `--no-mcp` | off | Don't inject ccglass's self-inspection tools into Claude Code |
+| `--no-settings-override` | off | Don't force Claude Code onto the proxy via `--settings` (for when a provider switcher set `ANTHROPIC_BASE_URL`) |
 | `--no-redact` | off | Keep auth tokens unmasked in saved logs |
 
 ## Logs & secrets
