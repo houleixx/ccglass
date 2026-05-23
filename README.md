@@ -10,6 +10,10 @@ npm install -g ccglass
 ccglass
 ```
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jianshuo/ccglass/main/docs/demo.gif" alt="ccglass dashboard — live request capture, token/cache/cost, message history with tool calls, the agent-loop flow view, and a turn-to-turn diff" width="100%">
+</p>
+
 Run with no arguments and `ccglass` asks which client to inspect:
 
 ```
