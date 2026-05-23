@@ -10,6 +10,7 @@ name: Claude
 # the CLAUDE_CODE_OAUTH_TOKEN secret used below.
 
 on:
+  workflow_dispatch: {}
   issues:
     types: [opened]
   issue_comment:
