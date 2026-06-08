@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ccglass — See exactly what your coding agent sends to the model</title>
+<meta name="description" content="A lightweight local logging reverse-proxy + web dashboard for Claude Code, Codex, DeepSeek-TUI, Reasonix, Kimi, OpenCode, and more.">
+<meta property="og:title" content="ccglass — Agent traffic inspector">
+<meta property="og:description" content="See the full system prompt, tool schemas, message history, token/cache/cost in real time. One command: ccglass claude, ccglass codex.">
+<meta property="og:url" content="https://ccglass.jianshuo.dev">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@300;400;500;600&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0a0a0a;
+    --ink-2: #3a3a3a;
+    --ink-3: #7a7a7a;
+    --ink-4: #b0b0b0;
+    --paper: #fafaf8;
+    --paper-2: #f2f2ef;
+    --paper-3: #e8e8e4;
+    --accent: #e85d27;
+    --accent-2: #f07d4e;
+    --green: #16a34a;
+    --blue: #1d4ed8;
+    --border: rgba(0,0,0,0.08);
+    --border-strong: rgba(0,0,0,0.14);
+
+    --font-serif: 'Instrument Serif', Georgia, serif;
+    --font-mono: 'Geist Mono', 'Courier New', monospace;
+    --font-sans: 'Geist', system-ui, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(250, 250, 248, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-logo {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-logo-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    list-style: none;
+  }
+
+  .nav-links a {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--ink-3);
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--ink); }
+
+  .nav-cta {
+    font-family: var(--font-mono) !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    color: var(--paper) !important;
+    background: var(--ink);
+    padding: 5px 14px;
+    border-radius: 4px;
+    text-decoration: none;
+    transition: background 0.2s;
+  }
+
+  .nav-cta:hover { background: var(--accent) !important; }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 120px 2rem 80px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .hero-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1.5rem;
+    opacity: 0;
+    animation: fade-up 0.6s ease forwards;
+    animation-delay: 0.1s;
+  }
+
+  .hero-headline {
+    font-family: var(--font-serif);
+    font-size: clamp(40px, 6vw, 72px);
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    max-width: 720px;
+    margin-bottom: 1.5rem;
+    opacity: 0;
+    animation: fade-up 0.6s ease forwards;
+    animation-delay: 0.2s;
+  }
+
+  .hero-headline em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  .hero-sub {
+    font-family: var(--font-sans);
+    font-size: 18px;
+    font-weight: 300;
+    color: var(--ink-2);
+    max-width: 560px;
+    line-height: 1.6;
+    margin-bottom: 2.5rem;
+    opacity: 0;
+    animation: fade-up 0.6s ease forwards;
+    animation-delay: 0.3s;
+  }
+
+  .hero-install {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 8px;
+    opacity: 0;
+    animation: fade-up 0.6s ease forwards;
+    animation-delay: 0.4s;
+  }
+
+  .install-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-4);
+  }
+
+  .install-block {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--ink);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .install-cmd {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 400;
+    color: #e8e8e8;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .install-cmd .prompt {
+    color: var(--accent-2);
+    user-select: none;
+  }
+
+  .install-cmd .cmd-text { color: #fff; }
+  .install-cmd .cmd-pkg { color: #7dd3fc; }
+  .install-cmd .cmd-flag { color: #86efac; }
+
+  .install-copy {
+    background: none;
+    border: none;
+    border-left: 1px solid rgba(255,255,255,0.1);
+    cursor: pointer;
+    padding: 12px 16px;
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    color: rgba(255,255,255,0.4);
+  }
+
+  .install-copy:hover { color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.06); }
+  .install-copy.copied { color: var(--green); }
+
+  .hero-then {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    opacity: 0;
+    animation: fade-up 0.6s ease forwards;
+    animation-delay: 0.5s;
+  }
+
+  .hero-then-row {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink-3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .hero-then-row .prompt { color: var(--ink-4); }
+  .hero-then-row .cmd { color: var(--ink); }
+  .hero-then-row .comment { color: var(--ink-4); font-style: italic; }
+
+  .hero-badges {
+    margin-top: 2.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    opacity: 0;
+    animation: fade-up 0.6s ease forwards;
+    animation-delay: 0.6s;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 100px;
+    border: 1px solid var(--border-strong);
+    color: var(--ink-2);
+    background: var(--paper-2);
+    letter-spacing: 0.02em;
+  }
+
+  .badge.green { border-color: rgba(22,163,74,0.25); background: rgba(22,163,74,0.06); color: var(--green); }
+  .badge.blue { border-color: rgba(29,78,216,0.2); background: rgba(29,78,216,0.05); color: var(--blue); }
+
+  /* ── DEMO IMAGE ── */
+  .demo-section {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 2rem 80px;
+    opacity: 0;
+    animation: fade-up 0.7s ease forwards;
+    animation-delay: 0.7s;
+  }
+
+  .demo-frame {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    box-shadow:
+      0 4px 6px rgba(0,0,0,0.03),
+      0 12px 32px rgba(0,0,0,0.07),
+      0 40px 80px rgba(0,0,0,0.06);
+  }
+
+  .demo-titlebar {
+    background: #e8e8e4;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .demo-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+
+  .demo-dot-red { background: #ff5f57; }
+  .demo-dot-yellow { background: #febc2e; }
+  .demo-dot-green { background: #28c840; }
+
+  .demo-url {
+    flex: 1;
+    margin: 0 12px;
+    background: var(--paper-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    text-align: center;
+  }
+
+  .demo-img {
+    width: 100%;
+    display: block;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    background: #0a0a0a;
+  }
+
+  .demo-img-fallback {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .demo-console {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: #d4d4d4;
+    line-height: 1.7;
+    z-index: 2;
+    position: relative;
+    padding: 32px 40px;
+    width: 100%;
+  }
+
+  .console-comment { color: #6a9955; }
+  .console-cmd { color: #9cdcfe; }
+  .console-output { color: #d4d4d4; }
+  .console-url { color: #4ec9b0; text-decoration: underline; }
+  .console-accent { color: var(--accent-2); }
+  .console-dim { color: #6e6e6e; }
+  .console-prompt { color: #7dd3fc; }
+
+  /* ── SECTIONS ── */
+  section {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 80px 2rem;
+  }
+
+  .section-rule {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0 2rem;
+    max-width: calc(1100px - 4rem);
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-4);
+    margin-bottom: 1rem;
+  }
+
+  .section-title {
+    font-family: var(--font-serif);
+    font-size: clamp(28px, 3.5vw, 44px);
+    line-height: 1.15;
+    color: var(--ink);
+    max-width: 560px;
+    margin-bottom: 1rem;
+  }
+
+  .section-title em { font-style: italic; color: var(--accent); }
+
+  .section-body {
+    font-size: 17px;
+    color: var(--ink-2);
+    max-width: 520px;
+    line-height: 1.65;
+    font-weight: 300;
+  }
+
+  /* ── WHY SECTION ── */
+  .why-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: start;
+    margin-top: 3rem;
+  }
+
+  @media (max-width: 700px) {
+    .why-grid { grid-template-columns: 1fr; gap: 32px; }
+  }
+
+  .why-problem {
+    background: var(--paper-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 28px;
+  }
+
+  .why-problem-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1rem;
+  }
+
+  .why-problem h3 {
+    font-family: var(--font-serif);
+    font-size: 22px;
+    color: var(--ink);
+    margin-bottom: 0.75rem;
+    line-height: 1.3;
+  }
+
+  .why-problem p {
+    font-size: 15px;
+    color: var(--ink-2);
+    line-height: 1.65;
+    font-weight: 300;
+  }
+
+  .code-block {
+    background: var(--ink);
+    border-radius: 6px;
+    padding: 20px 24px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.8;
+    color: #d4d4d4;
+    overflow-x: auto;
+  }
+
+  .code-block .c { color: #6a9955; }
+  .code-block .k { color: #569cd6; }
+  .code-block .s { color: #ce9178; }
+  .code-block .v { color: #9cdcfe; }
+  .code-block .o { color: var(--accent-2); }
+
+  /* ── FEATURES ── */
+  .features-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 2rem;
+    flex-wrap: wrap;
+    margin-bottom: 3rem;
+  }
+
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  @media (max-width: 800px) {
+    .features-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 500px) {
+    .features-grid { grid-template-columns: 1fr; }
+  }
+
+  .feature-card {
+    background: var(--paper);
+    padding: 28px 28px 32px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+    cursor: default;
+  }
+
+  .feature-card:nth-child(3n) { border-right: none; }
+  .feature-card:nth-last-child(-n+3) { border-bottom: none; }
+
+  @media (max-width: 800px) {
+    .feature-card:nth-child(3n) { border-right: 1px solid var(--border); }
+    .feature-card:nth-child(2n) { border-right: none; }
+    .feature-card:nth-last-child(-n+3) { border-bottom: 1px solid var(--border); }
+    .feature-card:nth-last-child(-n+2) { border-bottom: none; }
+  }
+
+  .feature-card:hover { background: var(--paper-2); }
+
+  .feature-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+    font-size: 20px;
+    background: var(--paper-2);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  .feature-title {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.01em;
+  }
+
+  .feature-desc {
+    font-size: 14px;
+    color: var(--ink-3);
+    line-height: 1.6;
+    font-weight: 300;
+  }
+
+  /* ── HOW IT WORKS ── */
+  .how-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 60px;
+    align-items: start;
+    margin-top: 3rem;
+  }
+
+  @media (max-width: 700px) {
+    .how-layout { grid-template-columns: 1fr; }
+  }
+
+  .how-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .how-step {
+    display: flex;
+    gap: 20px;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border);
+    cursor: default;
+  }
+
+  .how-step:first-child { padding-top: 0; }
+  .how-step:last-child { border-bottom: none; }
+
+  .step-num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-4);
+    letter-spacing: 0.08em;
+    min-width: 28px;
+    padding-top: 2px;
+  }
+
+  .step-body h3 {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 0.4rem;
+    letter-spacing: -0.01em;
+  }
+
+  .step-body p {
+    font-size: 14px;
+    color: var(--ink-3);
+    line-height: 1.6;
+    font-weight: 300;
+  }
+
+  .how-code {
+    position: sticky;
+    top: 80px;
+  }
+
+  .how-code-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-4);
+    margin-bottom: 10px;
+  }
+
+  .terminal-block {
+    background: #0d1117;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .terminal-header {
+    background: #161b22;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .terminal-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .t-red { background: #ff5f57; }
+  .t-yellow { background: #febc2e; }
+  .t-green { background: #28c840; }
+
+  .terminal-body {
+    padding: 20px 24px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.9;
+  }
+
+  .t-prompt { color: #7dd3fc; }
+  .t-cmd { color: #ffffff; }
+  .t-output { color: #7c7c7c; }
+  .t-success { color: #4ade80; }
+  .t-url { color: #4ec9b0; }
+  .t-label { color: #e2e8f0; }
+  .t-comment { color: #6a9955; }
+  .t-provider { color: var(--accent-2); }
+  .t-blank { display: block; height: 0.5em; }
+
+  /* ── PROVIDERS ── */
+  .providers-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: end;
+    margin-bottom: 2.5rem;
+  }
+
+  @media (max-width: 700px) {
+    .providers-header { grid-template-columns: 1fr; gap: 1rem; }
+  }
+
+  .provider-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  thead { background: var(--paper-2); }
+
+  th {
+    text-align: left;
+    padding: 12px 16px;
+    font-weight: 600;
+    color: var(--ink-2);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--ink);
+    vertical-align: middle;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  tr:hover td { background: var(--paper-2); }
+
+  .td-cmd {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .td-wraps { color: var(--ink-2); }
+  .td-env { color: #7c3aed; font-size: 12px; }
+  .td-format { color: var(--ink-3); font-size: 12px; }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+  }
+
+  .tag-anthropic { background: rgba(232,93,39,0.1); color: var(--accent); border: 1px solid rgba(232,93,39,0.2); }
+  .tag-openai { background: rgba(22,163,74,0.08); color: var(--green); border: 1px solid rgba(22,163,74,0.2); }
+  .tag-local { background: rgba(124,58,237,0.08); color: #7c3aed; border: 1px solid rgba(124,58,237,0.2); }
+
+  /* ── IDE SECTION ── */
+  .ide-card {
+    background: var(--paper-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 40px 48px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: center;
+    margin-top: 3rem;
+  }
+
+  @media (max-width: 700px) {
+    .ide-card { grid-template-columns: 1fr; gap: 24px; padding: 28px; }
+  }
+
+  .ide-copy h3 {
+    font-family: var(--font-serif);
+    font-size: 28px;
+    color: var(--ink);
+    line-height: 1.25;
+    margin-bottom: 0.75rem;
+  }
+
+  .ide-copy h3 em { font-style: italic; color: var(--accent); }
+
+  .ide-copy p {
+    font-size: 15px;
+    color: var(--ink-2);
+    line-height: 1.65;
+    font-weight: 300;
+    margin-bottom: 1rem;
+  }
+
+  .ide-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 1rem;
+  }
+
+  .ide-tag {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 4px 12px;
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    color: var(--ink-2);
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 40px 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .footer-left {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-4);
+  }
+
+  .footer-left a {
+    color: var(--ink-3);
+    text-decoration: none;
+  }
+
+  .footer-left a:hover { color: var(--ink); }
+
+  .footer-right {
+    display: flex;
+    gap: 1.5rem;
+  }
+
+  .footer-right a {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-4);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .footer-right a:hover { color: var(--ink); }
+
+  /* ── SCROLL REVEAL ── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.55s ease, transform 0.55s ease;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: none;
+  }
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  /* ── MISC ── */
+  .github-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    text-decoration: none;
+    padding: 8px 16px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--paper);
+    transition: all 0.2s;
+  }
+
+  .github-link:hover {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  .github-star-count {
+    font-size: 11px;
+    color: var(--ink-4);
+    font-weight: 400;
+  }
+
+  .inline-code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--paper-3);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--accent);
+  }
+
+  /* Cursor MCP limitation note */
+  .limitation-note {
+    font-size: 13px;
+    color: var(--ink-3);
+    background: var(--paper-2);
+    border-left: 3px solid var(--ink-4);
+    padding: 10px 14px;
+    border-radius: 0 4px 4px 0;
+    margin-top: 1rem;
+    font-family: var(--font-mono);
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="/" class="nav-logo">
+    <span class="nav-logo-dot"></span>
+    ccglass
+  </a>
+  <ul class="nav-links">
+    <li><a href="#why">Why</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#providers">Providers</a></li>
+    <li><a href="https://github.com/jianshuo/ccglass" target="_blank" rel="noopener" class="nav-cta">GitHub ↗</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-eyebrow">Agent traffic inspector</div>
+  <h1 class="hero-headline">
+    See <em>exactly</em> what your<br>coding agent sends to the model
+  </h1>
+  <p class="hero-sub">
+    A lightweight local reverse-proxy + web dashboard for Claude Code,
+    Codex, DeepSeek-TUI, Reasonix, Kimi, OpenCode, Ollama, OpenRouter, and more.
+  </p>
+
+  <div class="hero-install">
+    <span class="install-label">Install &amp; run</span>
+    <div class="install-block">
+      <div class="install-cmd">
+        <span class="prompt">$</span>
+        <span class="cmd-text">npm install <span class="cmd-flag">-g</span> <span class="cmd-pkg">ccglass</span></span>
+      </div>
+      <button class="install-copy" onclick="copyInstall(this)" aria-label="Copy install command">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        copy
+      </button>
+    </div>
+  </div>
+
+  <div class="hero-then">
+    <div class="hero-then-row">
+      <span class="prompt">$</span>
+      <span class="cmd">ccglass claude</span>
+      <span class="comment">&nbsp;&nbsp;# wrap Claude Code</span>
+    </div>
+    <div class="hero-then-row">
+      <span class="prompt">$</span>
+      <span class="cmd">ccglass codex</span>
+      <span class="comment">&nbsp;&nbsp;# or Codex</span>
+    </div>
+    <div class="hero-then-row">
+      <span class="prompt">$</span>
+      <span class="cmd">ccglass</span>
+      <span class="comment">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# interactive picker</span>
+    </div>
+  </div>
+
+  <div class="hero-badges">
+    <span class="badge green">Node ≥ 18</span>
+    <span class="badge green">No runtime deps for core</span>
+    <span class="badge blue">No CA certs needed</span>
+    <span class="badge">MIT license</span>
+    <span class="badge">Light &amp; dark theme</span>
+  </div>
+</section>
+
+<!-- DEMO FRAME -->
+<div class="demo-section">
+  <div class="demo-frame">
+    <div class="demo-titlebar">
+      <div class="demo-dot demo-dot-red"></div>
+      <div class="demo-dot demo-dot-yellow"></div>
+      <div class="demo-dot demo-dot-green"></div>
+      <div class="demo-url">http://127.0.0.1:57633</div>
+    </div>
+    <img
+      src="demo.gif"
+      alt="ccglass dashboard — live request capture, token/cache/cost, message history with tool calls, the agent-loop flow view, and a turn-to-turn diff"
+      class="demo-img"
+      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+    >
+    <div class="demo-img-fallback" style="display:none">
+      <div class="demo-console">
+<span class="console-dim"># Terminal 1</span>
+<span class="console-prompt">$</span> <span class="console-cmd">ccglass claude</span>
+
+  <span class="console-accent">●</span> ccglass watching <span class="console-cmd">Claude Code</span> → https://api.anthropic.com
+    dashboard: <span class="console-url">http://127.0.0.1:57633</span>
+
+<span class="console-dim">  ┌─ Request #1 ────────────────────────────────────────────</span>
+<span class="console-dim">  │</span> POST /v1/messages  <span class="console-accent">claude-sonnet-4-5</span>  3 tools  128k ctx
+<span class="console-dim">  │</span> input: 12,482 tokens  cache_read: 11,890 (95%)  cost: $0.0041
+<span class="console-dim">  │</span> output: 234 tokens  latency: 1.8s  TTFT: 312ms
+<span class="console-dim">  └──────────────────────────────────────────────────────────</span>
+
+<span class="console-dim">  ┌─ Request #2 ────────────────────────────────────────────</span>
+<span class="console-dim">  │</span> POST /v1/messages  <span class="console-accent">claude-sonnet-4-5</span>  3 tools  diff: +2 msgs
+<span class="console-dim">  │</span> input: 13,104 tokens  cache_read: 12,480 (95%)  cost: $0.0044
+<span class="console-dim">  └──────────────────────────────────────────────────────────</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="section-rule">
+
+<!-- WHY SECTION -->
+<section id="why">
+  <div class="reveal">
+    <div class="section-eyebrow">The problem</div>
+    <h2 class="section-title">These CLIs <em>ignore</em> your proxy settings</h2>
+  </div>
+  <div class="why-grid reveal">
+    <div>
+      <p class="section-body" style="margin-bottom:1.5rem">
+        Claude Code, Codex, and friends are Node/native apps that completely bypass
+        <span class="inline-code">HTTP_PROXY</span> and <span class="inline-code">HTTPS_PROXY</span> —
+        so Charles, mitmproxy, and fetch-patching tools simply never see the traffic.
+      </p>
+      <p class="section-body">
+        ccglass sidesteps all of that. The client does HTTPS to the real API itself.
+        You only intercept the plain HTTP hop to localhost. No CA certificates to
+        install, no TLS pinning to fight, no <em>install root certs in every new terminal</em>.
+      </p>
+    </div>
+    <div class="why-problem">
+      <div class="why-problem-label">The ccglass approach</div>
+      <h3>One plain HTTP hop to localhost</h3>
+      <p style="margin-bottom:1.25rem">
+        Set the agent's base-URL env var to point at the local proxy.
+        The agent does TLS to the real API; you watch the plaintext request on localhost.
+      </p>
+      <div class="code-block">
+<span class="c"># What ccglass does internally for you:</span>
+
+ANTHROPIC_BASE_URL=http://127.0.0.1:<span class="v">PORT</span> \
+  claude  <span class="c"># ← agent handles HTTPS to api.anthropic.com</span>
+          <span class="c"># ← ccglass reads the plaintext hop</span>
+          <span class="c"># ← dashboard shows everything</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="section-rule">
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="features-header reveal">
+    <div>
+      <div class="section-eyebrow">Dashboard features</div>
+      <h2 class="section-title">Everything in the request,<br><em>laid bare</em></h2>
+    </div>
+    <p class="section-body" style="font-size:15px">
+      Full system prompts. Every tool schema. Message history. Token, cache, and cost
+      numbers. Turn-to-turn diffs. All of it, in real time.
+    </p>
+  </div>
+
+  <div class="features-grid reveal">
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">Live request stream</div>
+      <div class="feature-desc">Every call appears instantly. Click to expand the system prompt, messages, and tools. Long blocks fold behind a toggle. Timestamp and tool-call count on each row.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🗺</div>
+      <div class="feature-title">Conversation flow diagram</div>
+      <div class="feature-desc">Top-to-bottom sequence diagram of the agent loop. Tool use and tool result paired by call_id and color-coded. Skill calls flagged.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⇄</div>
+      <div class="feature-title">Turn-to-turn diff</div>
+      <div class="feature-desc">Pick two requests, see exactly what context was added this turn and which blocks carry a cache breakpoint. Understand prompt inflation at a glance.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💰</div>
+      <div class="feature-title">Token / cache / cost</div>
+      <div class="feature-desc">Exact input, output, and cache tokens from the response usage object. Cache-hit rate percentage. Estimated USD per request with per-provider pricing.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📤</div>
+      <div class="feature-title">Response export</div>
+      <div class="feature-desc">Streamed SSE rebuilt into the final message with stop reason, tool calls, and usage. Export any request as raw HTTP transcript, Markdown, JSON, or HAR.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⏱</div>
+      <div class="feature-title">Per-request latency</div>
+      <div class="feature-desc">End-to-end time on each list row. Overview shows total time, TTFT, generation window, and approximate input/output tokens per second.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔬</div>
+      <div class="feature-title">MCP self-inspection</div>
+      <div class="feature-desc">When wrapping Claude Code, ccglass exposes itself as an MCP server so Claude can inspect the live traffic directly from within a session.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <div class="feature-title">Session summary</div>
+      <div class="feature-desc">Rolled-up input and output tokens, cache-hit percentage, and estimated cost across the full session. Filter per-model from the session picker.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌓</div>
+      <div class="feature-title">Light &amp; dark theme</div>
+      <div class="feature-desc">Toggle between light and dark modes in the dashboard. Per-model filter, session stats, latency trend, and error counts all respect the theme.</div>
+    </div>
+  </div>
+</section>
+
+<hr class="section-rule">
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="reveal">
+    <div class="section-eyebrow">How it works</div>
+    <h2 class="section-title">One command wraps<br>the entire agent loop</h2>
+  </div>
+
+  <div class="how-layout">
+    <div class="how-steps reveal">
+      <div class="how-step">
+        <div class="step-num">01</div>
+        <div class="step-body">
+          <h3>Install globally once</h3>
+          <p>
+            <span class="inline-code">npm install -g ccglass</span> puts the binary in your PATH.
+            No runtime dependencies for the core proxy. The optional MCP self-inspection
+            feature pulls in <span class="inline-code">@modelcontextprotocol/sdk</span> and <span class="inline-code">zod</span>.
+          </p>
+        </div>
+      </div>
+      <div class="how-step">
+        <div class="step-num">02</div>
+        <div class="step-body">
+          <h3>Run with the client name</h3>
+          <p>
+            <span class="inline-code">ccglass claude</span> starts a local proxy, sets
+            <span class="inline-code">ANTHROPIC_BASE_URL</span> to point at it, then launches
+            Claude Code. Pick from the interactive menu or name the provider directly.
+          </p>
+        </div>
+      </div>
+      <div class="how-step">
+        <div class="step-num">03</div>
+        <div class="step-body">
+          <h3>Dashboard opens automatically</h3>
+          <p>
+            The local dashboard opens in your browser. Every API request the agent makes
+            appears in real time — system prompt, tools, messages, tokens, cost.
+          </p>
+        </div>
+      </div>
+      <div class="how-step">
+        <div class="step-num">04</div>
+        <div class="step-body">
+          <h3>Use the agent normally</h3>
+          <p>
+            Work in your coding agent exactly as you normally would. ccglass is entirely
+            transparent — the proxy forwards all traffic faithfully; nothing is modified,
+            nothing is blocked. Ctrl-C to stop.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="how-code reveal" style="transition-delay: 0.1s">
+      <div class="how-code-title">In your terminal</div>
+      <div class="terminal-block">
+        <div class="terminal-header">
+          <div class="terminal-dot t-red"></div>
+          <div class="terminal-dot t-yellow"></div>
+          <div class="terminal-dot t-green"></div>
+        </div>
+        <div class="terminal-body">
+<div><span class="t-comment"># Interactive picker — no arguments needed</span></div>
+<div><span class="t-prompt">$</span> <span class="t-cmd">ccglass</span></div>
+<div class="t-blank"></div>
+<div><span class="t-output">  Which client do you want to inspect?</span></div>
+<div class="t-blank"></div>
+<div><span class="t-output">    1) <span class="t-provider">Claude Code</span></span></div>
+<div><span class="t-output">    2) Codex (OpenAI)</span></div>
+<div><span class="t-output">    3) DeepSeek-TUI</span></div>
+<div><span class="t-output">    4) Reasonix</span></div>
+<div><span class="t-output">    5) Kimi (Moonshot)</span></div>
+<div><span class="t-output">    6) OpenCode</span></div>
+<div class="t-blank"></div>
+<div><span class="t-output">  &gt; 1</span></div>
+<div class="t-blank"></div>
+<div><span class="t-success">  ●</span> <span class="t-label">ccglass watching <span class="t-provider">Claude Code</span> → api.anthropic.com</span></div>
+<div><span class="t-output">    dashboard: <span class="t-url">http://127.0.0.1:57633</span></span></div>
+<div><span class="t-output">    (Ctrl-C to stop)</span></div>
+<div class="t-blank"></div>
+<div><span class="t-comment"># Or name it directly:</span></div>
+<div><span class="t-prompt">$</span> <span class="t-cmd">ccglass claude</span></div>
+<div><span class="t-prompt">$</span> <span class="t-cmd">ccglass codex</span></div>
+<div><span class="t-prompt">$</span> <span class="t-cmd">ccglass ollama</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="section-rule">
+
+<!-- PROVIDERS TABLE -->
+<section id="providers">
+  <div class="providers-header reveal">
+    <div>
+      <div class="section-eyebrow">Supported providers</div>
+      <h2 class="section-title">Works with the tools<br>you already use</h2>
+    </div>
+    <p class="section-body" style="font-size:15px">
+      Built-in support for every major AI coding agent and model provider.
+      Custom providers via the generic <span class="inline-code">ccglass run</span> escape hatch.
+    </p>
+  </div>
+
+  <div class="provider-table-wrap reveal">
+    <table>
+      <thead>
+        <tr>
+          <th>Command</th>
+          <th>Wraps</th>
+          <th>Env var set</th>
+          <th>Format</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="td-cmd">ccglass claude</td>
+          <td class="td-wraps">Claude Code</td>
+          <td class="td-env">ANTHROPIC_BASE_URL</td>
+          <td><span class="tag tag-anthropic">Anthropic</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass codex</td>
+          <td class="td-wraps">Codex (OpenAI)</td>
+          <td class="td-env">OPENAI_BASE_URL</td>
+          <td><span class="tag tag-openai">OpenAI</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass deepseek</td>
+          <td class="td-wraps">DeepSeek-TUI dispatcher</td>
+          <td class="td-env">DEEPSEEK_BASE_URL</td>
+          <td><span class="tag tag-openai">OpenAI</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass deepseek-tui</td>
+          <td class="td-wraps">DeepSeek-TUI runtime</td>
+          <td class="td-env">DEEPSEEK_BASE_URL</td>
+          <td><span class="tag tag-openai">OpenAI</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass reasonix</td>
+          <td class="td-wraps">Reasonix</td>
+          <td class="td-env">DEEPSEEK_BASE_URL</td>
+          <td><span class="tag tag-openai">OpenAI</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass kimi</td>
+          <td class="td-wraps">Claude Code → Moonshot</td>
+          <td class="td-env">ANTHROPIC_BASE_URL</td>
+          <td><span class="tag tag-anthropic">Anthropic</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass opencode</td>
+          <td class="td-wraps">OpenCode</td>
+          <td class="td-env">OPENAI_BASE_URL</td>
+          <td><span class="tag tag-openai">OpenAI</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass ollama</td>
+          <td class="td-wraps">Any Ollama-backed client</td>
+          <td class="td-env">OPENAI_BASE_URL</td>
+          <td><span class="tag tag-local">Local</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass lmstudio</td>
+          <td class="td-wraps">Any LM Studio-backed client</td>
+          <td class="td-env">OPENAI_BASE_URL</td>
+          <td><span class="tag tag-local">Local</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass openrouter</td>
+          <td class="td-wraps">Any OpenRouter client</td>
+          <td class="td-env">OPENAI_BASE_URL</td>
+          <td><span class="tag tag-openai">OpenAI</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass bedrock</td>
+          <td class="td-wraps">Claude Code → AWS Bedrock</td>
+          <td class="td-env">ANTHROPIC_BEDROCK_BASE_URL</td>
+          <td><span class="tag tag-anthropic">Anthropic</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass vertex</td>
+          <td class="td-wraps">Claude Code → Google Vertex</td>
+          <td class="td-env">ANTHROPIC_BASE_URL</td>
+          <td><span class="tag tag-anthropic">Anthropic</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass glm</td>
+          <td class="td-wraps">Any GLM/Zhipu client</td>
+          <td class="td-env">OPENAI_BASE_URL</td>
+          <td><span class="tag tag-openai">OpenAI</span></td>
+        </tr>
+        <tr>
+          <td class="td-cmd">ccglass run --provider &lt;p&gt; -- &lt;cmd&gt;</td>
+          <td class="td-wraps">Any client with a base-URL env var</td>
+          <td class="td-env">per provider / --env-var</td>
+          <td><span class="tag tag-openai">OpenAI</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="section-rule">
+
+<!-- IDE SECTION -->
+<section id="ide">
+  <div class="reveal">
+    <div class="section-eyebrow">IDE extensions</div>
+  </div>
+  <div class="ide-card reveal">
+    <div class="ide-copy">
+      <h3>Works with <em>Cursor,</em> Cline, and Continue.dev too</h3>
+      <p>
+        IDE extensions that let you configure a custom API base URL can be inspected
+        with <span class="inline-code">ccglass proxy</span> — it starts the proxy and dashboard
+        without spawning any child process.
+      </p>
+      <div class="code-block" style="margin-top:0.75rem">
+<span class="c"># For OpenAI-compatible IDEs (Cursor BYOK, Cline, Continue…)</span>
+ccglass proxy --provider openai
+
+<span class="c"># For Anthropic-compatible IDEs</span>
+ccglass proxy --provider claude
+      </div>
+      <div class="ide-tags">
+        <span class="ide-tag">Cursor (BYOK)</span>
+        <span class="ide-tag">Cline</span>
+        <span class="ide-tag">Continue.dev</span>
+        <span class="ide-tag">Copilot Chat (custom)</span>
+      </div>
+      <div class="limitation-note">
+        Note: works in BYOK / custom-API-key mode only. Cursor's built-in subscription
+        routes through api2.cursor.sh and cannot be intercepted this way.
+      </div>
+    </div>
+    <div>
+      <div class="how-code-title">Output</div>
+      <div class="terminal-block">
+        <div class="terminal-header">
+          <div class="terminal-dot t-red"></div>
+          <div class="terminal-dot t-yellow"></div>
+          <div class="terminal-dot t-green"></div>
+        </div>
+        <div class="terminal-body">
+<div><span class="t-prompt">$</span> <span class="t-cmd">ccglass proxy --provider openai</span></div>
+<div class="t-blank"></div>
+<div><span class="t-success">  ●</span> <span class="t-label">ccglass proxy → https://api.openai.com</span></div>
+<div class="t-blank"></div>
+<div><span class="t-output">    Set your IDE's API base URL to:</span></div>
+<div><span class="t-url">    http://127.0.0.1:57101</span></div>
+<div class="t-blank"></div>
+<div><span class="t-output">    dashboard: <span class="t-url">http://127.0.0.1:57633</span></span></div>
+<div><span class="t-output">    (Ctrl-C to stop)</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="section-rule">
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-left">
+    <strong style="color:var(--ink)">ccglass</strong> &nbsp;·&nbsp;
+    MIT license &nbsp;·&nbsp;
+    <a href="https://github.com/jianshuo/ccglass" target="_blank" rel="noopener">github.com/jianshuo/ccglass</a>
+  </div>
+  <div class="footer-right">
+    <a href="https://github.com/jianshuo/ccglass/issues/new" target="_blank" rel="noopener">Report issue</a>
+    <a href="https://www.npmjs.com/package/ccglass" target="_blank" rel="noopener">npm</a>
+    <a href="https://github.com/jianshuo/ccglass" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</footer>
+
+<script>
+  // Copy install command
+  function copyInstall(btn) {
+    navigator.clipboard.writeText('npm install -g ccglass').then(() => {
+      btn.classList.add('copied');
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> copied`;
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> copy`;
+      }, 2000);
+    });
+  }
+
+  // Scroll reveal
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
