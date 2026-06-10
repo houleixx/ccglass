@@ -344,6 +344,14 @@ And huge thanks to everyone else who shipped improvements:
 
 Thank you all. 🙏
 
+## Related tools
+
+| Tool | What it does |
+|------|-------------|
+| **ccglass** ← you are here | See exactly what your coding agent sends to the model |
+| [**ccline**](https://github.com/jianshuo/ccline) | Type a thought at your zsh prompt — get an AI answer and run the command |
+| [**cclight**](https://github.com/jianshuo/cclight) | MacBook notch glow tells you when Claude Code is thinking |
+
 ## Star History
 
 <a href="https://www.star-history.com/?repos=jianshuo%2Fccglass&type=date&legend=top-left">
