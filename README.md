@@ -6,7 +6,7 @@ OpenCode, DeepSeek-TUI, Reasonix, CodeBuddy, Kimi, Ollama, OpenRouter, and more*
 One command, like `ollama`:
 
 ```bash
-npm install -g ccglass
+npm install -g ccglass     # or: brew install jianshuo/tap/ccglass
 ccglass
 ```
 
